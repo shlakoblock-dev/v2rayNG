@@ -16,17 +16,22 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # Скачиваем нативную библиотеку libv2ray
+      - name: Download libv2ray
+        run: |
+          mkdir -p V2rayNG/app/libs
+          curl -L -o V2rayNG/app/libs/libv2ray.aar https://github.com/2dust/AndroidLibXrayLite/releases/latest/download/libv2ray.aar
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-        working-directory: V2rayNG  # Говорим, что gradlew лежит в папке V2rayNG
+        working-directory: V2rayNG
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
-        working-directory: V2rayNG  # И саму сборку запускаем оттуда
+        working-directory: V2rayNG
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SlivyVPN-Debug
-          # Путь к готовому APK тоже указываем относительно корня
           path: V2rayNG/app/build/outputs/apk/debug/*.apk
