@@ -16,16 +16,17 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # Убираем сломанный setup-android, он больше не нужен
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+        working-directory: V2rayNG  # <--- Указываем, где искать gradlew
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug
+        working-directory: V2rayNG  # <--- Собираем тоже оттуда
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: SlivyVPN-Debug
+          # Путь к APK тоже может измениться, проверь, если сборка пройдет, но файл не найдется
           path: V2rayNG/app/build/outputs/apk/debug/*.apk
