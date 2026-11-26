@@ -1,9 +1,7 @@
 name: Build Slivy VPN APK
 
 on:
-  workflow_dispatch: # Позволяет запускать сборку вручную кнопкой
-  push:
-    branches: [ "master", "main" ] # Запускает сборку при изменении кода
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,13 +16,11 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # Убираем сломанный setup-android, он больше не нужен
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # Собираем именно DEBUG версию, ей не нужен твой keystore
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
@@ -32,6 +28,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SlivyVPN-Debug
-          # Проверь путь! Если модуль лежит в корне, то будет app/build/...
-          # Если в подпапке, то V2rayNG/app/build/...
           path: V2rayNG/app/build/outputs/apk/debug/*.apk
