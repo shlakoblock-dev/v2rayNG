@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("com.jaredsburrows.license")
-    id("com.chaquo.python")
+    id("com.chaquo.python") // Плагин Chaquopy
 }
 
 android {
@@ -20,6 +20,12 @@ android {
         targetSdk = 37
         versionCode = 761
         versionName = "2.4.1"
+
+        // --- ПРАВИЛЬНЫЙ СИНТАКСИС NDK ДЛЯ KOTLIN DSL ---
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+        // ----------------------------------------------
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
@@ -158,23 +164,9 @@ android {
     testOptions {
         unitTests.all {
             it.useJUnitPlatform()
-            // Treat Jupiter discovery warnings as failures: JUnit 4 failed on an invalid @Test
-            // method, such as one that returns a value, while Jupiter only warns and skips it.
-            // The key is @API(status = EXPERIMENTAL) in JUnit 6; after a JUnit upgrade, check
-            // that a temporary `@Test fun probe() = 1` still fails the unit test task.
             it.systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
         }
     }
-
-    ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
-        }
-        python {
-            version = "3.11"
-            pip {
-                install("requests")
-            }
-        }
 }
 
 dependencies {
@@ -236,4 +228,14 @@ dependencies {
     testImplementation(libs.mockito.core)
     testImplementation(libs.mockito.kotlin)
     coreLibraryDesugaring(libs.desugar.jdk.libs)
+}
+
+// --- БЛОК CHAQUOPY ВЫНЕСЕН СЮДА ---
+chaquopy {
+    defaultConfig {
+        version = "3.11"
+        pip {
+            install("requests")
+        }
+    }
 }
