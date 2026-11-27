@@ -202,7 +202,8 @@ internal fun TvMainScreen(
                         onOpenDrawer = { openDrawer(TvMainFocusTarget.Toolbar) },
                         onMoveDown = { selectedGroup?.let { focusGroupTab(it.id) } ?: false },
                         onAction = onAction,
-                        onBulkDelete = dialogs.bulkDelete
+                        // ИСПРАВЛЕНИЕ ЗДЕСЬ: передаем лямбду, которая принимает аргумент
+                        onBulkDelete = { _: TvBulkDeleteTarget -> dialogs.bulkDelete() }
                     )
                 },
                 bottomBar = {
