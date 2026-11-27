@@ -20,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import com.v2ray.ang.dto.entities.ProfileItem
+import com.v2ray.ang.handler.AngConfigManager // <-- ВАЖНО: добавлен импорт
 import com.v2ray.ang.ui.compose.LocalDarkTheme
 import com.v2ray.ang.ui.compose.QRCodeDialog
 import kotlinx.coroutines.Dispatchers
@@ -42,14 +43,13 @@ fun MainScreen(
     val confirmRemove = uiState.confirmRemove
     val shareQRCodeBitmap = uiState.shareQRCodeBitmap
 
-    // --- СОСТОЯНИЕ ДЛЯ ПИТОНА ---
+    // Состояние для Python-скрипта
     var isUpdating by remember { mutableStateOf(false) }
     var updateLog by remember { mutableStateOf("") }
 
     val isDarkTheme = LocalDarkTheme.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
-    var showSearch by rememberSaveable { mutableStateOf(false) }
     val searchQuery = uiState.searchQuery
     var showDelInvalidConfirm by remember { mutableStateOf(false) }
     var showRemoveConfirm by rememberSaveable(stateSaver = ServerDeleteTarget.Saver) {
@@ -88,12 +88,8 @@ fun MainScreen(
     }
 
     MainDialogs(
-        showDelAllConfirm = false,
-        onDismissDelAll = { },
-        onConfirmDelAll = { },
-        showDelDuplicateConfirm = false,
-        onDismissDelDuplicate = { },
-        onConfirmDelDuplicate = { },
+        showDelAllConfirm = false, onDismissDelAll = { }, onConfirmDelAll = { },
+        showDelDuplicateConfirm = false, onDismissDelDuplicate = { }, onConfirmDelDuplicate = { },
         showDelInvalidConfirm = showDelInvalidConfirm,
         onDismissDelInvalid = { showDelInvalidConfirm = false },
         onConfirmDelInvalid = { showDelInvalidConfirm = false; onAction(MainAction.RemoveInvalidServers) },
@@ -135,7 +131,7 @@ fun MainScreen(
                             MainMoreMenuAction.TestAllRealPing -> onAction(MainAction.TestRealAllServers)
                             MainMoreMenuAction.SortByTestResults -> onAction(MainAction.SortByTestResults)
                             
-                            // --- ЗАПУСК ПИТОНА ---
+                            // --- ЗАПУСК PYTHON И СОХРАНЕНИЕ ---
                             MainMoreMenuAction.UpdateSubscriptions -> {
                                 isUpdating = true
                                 updateLog = "Инициализация Python..."
@@ -149,13 +145,27 @@ fun MainScreen(
                                         
                                         withContext(Dispatchers.Main) { updateLog = "Запуск проверки серверов..." }
                                         
-                                        // Вызываем функцию run() из sub.py
+                                        // Получаем текст с серверами
                                         val result = pyModule.callAttr("run").toString()
                                         
+                                        withContext(Dispatchers.Main) { updateLog = "Сохранение в базу..." }
+                                        
+                                        // СОХРАНЯЕМ В БАЗУ v2rayNG
+                                        if (result.isNotBlank()) {
+                                            AngConfigManager.importBatchConfig(
+                                                mainViewModel.getApplication(), 
+                                                result, 
+                                                "", 
+                                                true
+                                            )
+                                        }
+                                        
+                                        // Обновляем список на экране
+                                        mainViewModel.onAction(MainAction.RefreshGroups)
+                                        
                                         withContext(Dispatchers.Main) {
-                                            updateLog = "Успешно! Получено ${result.lines().size} серверов."
+                                            updateLog = "Успешно! Серверы добавлены."
                                             isUpdating = false
-                                            // TODO: Сохранить result в базу v2rayNG
                                         }
                                     } catch (e: Exception) {
                                         withContext(Dispatchers.Main) {
@@ -218,7 +228,7 @@ fun MainScreen(
                     modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { bottomBarHeightPx = it.height }
                 )
 
-                // --- ОВЕРЛЕЙ С ПРОГРЕССОМ ---
+                // ОВЕРЛЕЙ ЗАГРУЗКИ
                 if (isUpdating) {
                     Box(
                         modifier = Modifier
