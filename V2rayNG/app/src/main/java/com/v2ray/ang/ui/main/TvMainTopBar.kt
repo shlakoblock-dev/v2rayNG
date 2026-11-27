@@ -46,7 +46,7 @@ fun TvMainTopBar(
     onOpenDrawer: () -> Unit,
     onMoveDown: () -> Boolean,
     onAction: (MainAction) -> Unit,
-    onBulkDelete: () -> Unit,
+    onBulkDelete: (TvBulkDeleteTarget) -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val moreMenuScrollState = rememberScrollState()
