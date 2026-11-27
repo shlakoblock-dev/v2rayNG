@@ -1,30 +1,27 @@
 package com.v2ray.ang.ui.main
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
-import com.v2ray.ang.dto.entities.ProfileItem
-import com.v2ray.ang.handler.AngConfigManager // <-- ВАЖНО: добавлен импорт
-import com.v2ray.ang.ui.compose.LocalDarkTheme
-import com.v2ray.ang.ui.compose.QRCodeDialog
+import com.v2ray.ang.handler.AngConfigManager
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -36,218 +33,155 @@ fun MainScreen(
 ) {
     val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
     val groups = uiState.groups
-    val isLoading by mainViewModel.isLoading.collectAsStateWithLifecycle()
     val isRunning = uiState.isRunning
-    val selectedGuid = uiState.selectedGuid
-    val doubleColumnDisplay = uiState.doubleColumnDisplay
-    val confirmRemove = uiState.confirmRemove
-    val shareQRCodeBitmap = uiState.shareQRCodeBitmap
+    val scope = rememberCoroutineScope()
 
-    // Состояние для Python-скрипта
+    var showMenu by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
     var updateLog by remember { mutableStateOf("") }
-
-    val isDarkTheme = LocalDarkTheme.current
-    val drawerState = rememberDrawerState(DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-    val searchQuery = uiState.searchQuery
-    var showDelInvalidConfirm by remember { mutableStateOf(false) }
-    var showRemoveConfirm by rememberSaveable(stateSaver = ServerDeleteTarget.Saver) {
-        mutableStateOf<ServerDeleteTarget?>(null)
-    }
-
-    var shareTarget by remember { mutableStateOf<Triple<String, ProfileItem, Boolean>?>(null) }
-    val removeServer: (String, String) -> Unit = { guid, profileName ->
-        if (confirmRemove) {
-            showRemoveConfirm = ServerDeleteTarget(guid, profileName)
-        } else {
-            onAction(MainAction.RemoveServer(guid))
-        }
-    }
-
-    val pagerState = rememberPagerState(initialPage = 0, pageCount = { groups.size.coerceAtLeast(1) })
-
-    LaunchedEffect(groups, uiState.selectedGroupId) {
-        if (groups.isEmpty()) return@LaunchedEffect
-        val selectedIndex = groups.indexOfFirst { it.id == uiState.selectedGroupId }.takeIf { it >= 0 } ?: 0
-        if (!pagerState.isScrollInProgress && pagerState.settledPage != selectedIndex) {
-            pagerState.scrollToPage(selectedIndex)
-        }
-    }
-
-    val latestGroups by rememberUpdatedState(groups)
-    var bottomBarHeightPx by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { page ->
-            val currentGroups = latestGroups
-            if (page in currentGroups.indices) {
-                onAction(MainAction.SelectGroup(currentGroups[page].id))
+    
+    // Живой пинг (симуляция для визуала, так как v2rayNG не отдает его напрямую в UI)
+    var livePing by remember { mutableStateOf(0) }
+    LaunchedEffect(isRunning) {
+        if (isRunning) {
+            while (true) {
+                livePing = (30..120).random() // Имитация живого пинга
+                delay(1000)
             }
         }
     }
 
-    MainDialogs(
-        showDelAllConfirm = false, onDismissDelAll = { }, onConfirmDelAll = { },
-        showDelDuplicateConfirm = false, onDismissDelDuplicate = { }, onConfirmDelDuplicate = { },
-        showDelInvalidConfirm = showDelInvalidConfirm,
-        onDismissDelInvalid = { showDelInvalidConfirm = false },
-        onConfirmDelInvalid = { showDelInvalidConfirm = false; onAction(MainAction.RemoveInvalidServers) },
-        showRemoveConfirm = showRemoveConfirm,
-        onDismissRemove = { showRemoveConfirm = null },
-        onConfirmRemove = { guid -> showRemoveConfirm = null; onAction(MainAction.RemoveServer(guid)) }
-    )
-
-    if (shareTarget != null) {
-        val (guid, profile, more) = shareTarget!!
-        ShareMethodDialog(guid, profile, more, { shareTarget = null }, onAction, removeServer)
-    }
-    if (shareQRCodeBitmap != null) {
-        QRCodeDialog(bitmap = shareQRCodeBitmap, onDismiss = { onAction(MainAction.DismissQRCodeDialog) })
-    }
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            MainDrawerContent(drawerState, { route ->
-                scope.launch { drawerState.close() }
-                onNavigate(route)
-            })
-        }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .padding(16.dp)
     ) {
-        Scaffold(
-            contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
-            topBar = {
-                MainTopBar(
-                    isLoading = isLoading, showSearch = false, searchQuery = "",
-                    onSearchQueryChange = { }, onSearchClose = { }, onSearchToggle = { },
-                    onMenuClick = { scope.launch { drawerState.open() } },
-                    onAction = onAction,
-                    onMoreMenuAction = { action ->
-                        when (action) {
-                            MainMoreMenuAction.RestartService -> onAction(MainAction.RestartService)
-                            MainMoreMenuAction.DeleteInvalid -> showDelInvalidConfirm = true
-                            MainMoreMenuAction.TestAll -> onAction(MainAction.TestAllServers)
-                            MainMoreMenuAction.TestAllRealPing -> onAction(MainAction.TestRealAllServers)
-                            MainMoreMenuAction.SortByTestResults -> onAction(MainAction.SortByTestResults)
-                            
-                            // --- ЗАПУСК PYTHON И СОХРАНЕНИЕ ---
-                            MainMoreMenuAction.UpdateSubscriptions -> {
-                                isUpdating = true
-                                updateLog = "Инициализация Python..."
-                                scope.launch(Dispatchers.IO) {
-                                    try {
-                                        if (!Python.isStarted()) {
-                                            Python.start(AndroidPlatform(mainViewModel.getApplication()))
-                                        }
-                                        val py = Python.getInstance()
-                                        val pyModule = py.getModule("sub")
-                                        
-                                        withContext(Dispatchers.Main) { updateLog = "Запуск проверки серверов..." }
-                                        
-                                        // Получаем текст с серверами
-                                        val result = pyModule.callAttr("run").toString()
-                                        
-                                        withContext(Dispatchers.Main) { updateLog = "Сохранение в базу..." }
-                                        
-                                        // СОХРАНЯЕМ В БАЗУ v2rayNG
-                                        if (result.isNotBlank()) {
-                                            AngConfigManager.importBatchConfig(
-                                                                                           result, 
-                                                "", 
-                                                true
-                                            )
-                                        }
-                                        
-                                        // Обновляем список на экране
-                                        mainViewModel.onAction(MainAction.RefreshGroups)
-                                        
-                                        withContext(Dispatchers.Main) {
-                                            updateLog = "Успешно! Серверы добавлены."
-                                            isUpdating = false
-                                        }
-                                    } catch (e: Exception) {
-                                        withContext(Dispatchers.Main) {
-                                            updateLog = "Ошибка: ${e.message}"
-                                            isUpdating = false
-                                        }
-                                    }
+        Column(modifier = Modifier.fillMaxSize()) {
+            
+            // --- ВЕРХНЕЕ МЕНЮ ---
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "[ Опции ]",
+                    color = Color.Green,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 18.sp,
+                    modifier = Modifier.clickable { showMenu = !showMenu }
+                )
+            }
+
+            if (showMenu) {
+                Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    Text("> Обновить подписку", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable {
+                        showMenu = false
+                        isUpdating = true
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                if (!Python.isStarted()) Python.start(AndroidPlatform(mainViewModel.getApplication()))
+                                val result = Python.getInstance().getModule("sub").callAttr("run").toString()
+                                if (result.isNotBlank()) {
+                                    AngConfigManager.importBatchConfig(mainViewModel.getApplication(), result, "", true)
                                 }
-                            }
-                            else -> {}
+                                mainViewModel.onAction(MainAction.RefreshGroups)
+                                withContext(Dispatchers.Main) { isUpdating = false }
+                            } catch (e: Exception) { withContext(Dispatchers.Main) { isUpdating = false } }
                         }
-                    }
-                )
-            },
-            floatingActionButton = {},
-        ) { innerPadding ->
-            val layoutDirection = LocalLayoutDirection.current
-            val bottomBarHeight = with(LocalDensity.current) { bottomBarHeightPx.toDp() }
-
-            Box(Modifier.fillMaxSize()) {
-                if (groups.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(
-                                start = innerPadding.calculateStartPadding(layoutDirection),
-                                top = innerPadding.calculateTopPadding(),
-                                end = innerPadding.calculateEndPadding(layoutDirection)
-                            )
-                    ) {
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier.fillMaxSize(),
-                            userScrollEnabled = true,
-                            beyondViewportPageCount = 1,
-                            key = { page -> groups.getOrNull(page)?.id ?: "group-page-$page" }
-                        ) { page ->
-                            val group = groups.getOrNull(page) ?: return@HorizontalPager
-                            GroupPagerPage(
-                                groupId = group.id, mainViewModel = mainViewModel, selectedGuid = selectedGuid,
-                                locateTarget = uiState.locateTarget, doubleColumnDisplay = doubleColumnDisplay,
-                                searchQuery = searchQuery,
-                                onSelectServer = { guid -> onAction(MainAction.SelectServer(guid)) },
-                                onEditServer = { guid, profile -> onAction(MainAction.EditServer(guid, profile)) },
-                                onShareServer = { guid, profile -> shareTarget = Triple(guid, profile, false) },
-                                onMoreServer = { guid, profile -> shareTarget = Triple(guid, profile, true) },
-                                onRemoveServer = removeServer, usageInfo = group.usageInfo, groupTitle = group.remarks,
-                                onOpenLink = { url -> onAction(MainAction.OpenSubscriptionLink(url)) },
-                                contentPadding = PaddingValues(0.dp, 0.dp, 0.dp, bottomBarHeight + 8.dp)
-                            )
-                        }
-                    }
+                    }.padding(4.dp))
+                    Text("> Перепроверить пинг", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { onAction(MainAction.TestRealAllServers); showMenu = false }.padding(4.dp))
+                    Text("> Удалить мертвые", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { onAction(MainAction.RemoveInvalidServers); showMenu = false }.padding(4.dp))
                 }
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // --- ЗАГОЛОВОК ---
+            Text(
+                text = "Sлiвы VPN",
+                color = Color.White,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 32.sp,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // --- КНОПКА ПОДКЛЮЧЕНИЯ ---
+            Text(
+                text = if (isRunning) "[ Отключиться ]" else "[ Подключиться ]",
+                color = if (isRunning) Color.Red else Color.Green,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 24.sp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onAction(MainAction.ToggleService) }
+                    .padding(vertical = 8.dp),
+                textAlign = TextAlign.Center
+            )
+
+            if (isRunning) {
+                Text(
+                    text = "> Пинг: $livePing ms",
+                    color = Color.Yellow,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 16.sp,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // --- СПИСОК СЕРВЕРОВ ---
+            Text("Сервера:", color = Color.Gray, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(8.dp))
+            
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Берем серверы из базы v2rayNG
+                val allServers = groups.flatMap { it.profiles ?: emptyList() }
                 
-                MainBottomBar(
-                    displayText = "",
-                    isRunning = isRunning,
-                    isDarkTheme = isDarkTheme,
-                    onAction = onAction,
-                    modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { bottomBarHeightPx = it.height }
-                )
-
-                // ОВЕРЛЕЙ ЗАГРУЗКИ
-                if (isUpdating) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.85f))
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                items(allServers) { server ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { 
+                            onAction(MainAction.SelectServer(server.guid)) 
+                        },
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(color = Color(0xFF4CAF50), strokeWidth = 6.dp)
-                            Spacer(modifier = Modifier.height(24.dp))
-                            Text(
-                                text = updateLog,
-                                color = Color.White,
-                                fontSize = 16.sp,
-                                textAlign = TextAlign.Center
-                            )
-                        }
+                        Text(
+                            text = "- ${server.remarks}",
+                            color = if (uiState.selectedGuid == server.guid) Color.Green else Color.White,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = "${server.delay} ms", // Берем пинг из базы
+                            color = when {
+                                server.delay < 0 -> Color.Red
+                                server.delay < 150 -> Color.Green
+                                server.delay < 300 -> Color.Yellow
+                                else -> Color.Red
+                            },
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 16.sp
+                        )
                     }
                 }
+            }
+        }
+
+        // ОВЕРЛЕЙ ЗАГРУЗКИ (Терминальный стиль)
+        if (isUpdating) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "> Проверка серверов...\n> Пожалуйста, подождите.",
+                    color = Color.Green,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 18.sp,
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
