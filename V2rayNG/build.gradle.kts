@@ -4,7 +4,7 @@ plugins {
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
-    id("com.chaquo.python") version "15.0.1" apply false // <-- ДОБАВЛЕН ПЛАГИН
+    id("com.chaquo.python") version "17.0.0" apply false
 }
 
 buildscript {
