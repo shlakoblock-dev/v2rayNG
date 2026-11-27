@@ -19,21 +19,34 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.v2ray.ang.R
-import com.v2ray.ang.ui.compose.AppTopBar
 import com.v2ray.ang.ui.compose.AppDropdownMenuItems
+import com.v2ray.ang.ui.compose.AppTopBar
 import com.v2ray.ang.ui.compose.verticalScrollbar
+
+class TvMainTopBarFocus {
+    val start = FocusRequester()
+}
 
 @Composable
 fun TvMainTopBar(
     isLoading: Boolean,
-    onMenuClick: () -> Unit,
+    isRunning: Boolean,
+    showSearch: Boolean,
+    searchQuery: String,
+    focusRequesters: TvMainTopBarFocus,
+    onSearchQueryChange: (String) -> Unit,
+    onSearchClose: () -> Unit,
+    onSearchOpen: () -> Unit,
+    onOpenDrawer: () -> Unit,
+    onMoveDown: () -> Boolean,
     onAction: (MainAction) -> Unit,
-    onMoreMenuAction: (MainMoreMenuAction) -> Unit
+    onBulkDelete: () -> Unit,
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val moreMenuScrollState = rememberScrollState()
@@ -45,17 +58,22 @@ fun TvMainTopBar(
         title = stringResource(R.string.title_server),
         onBackClick = {},
         isLoading = isLoading,
-        isSearchActive = false,
-        searchQuery = "",
-        onSearchQueryChange = {},
-        onSearchClose = {},
-        searchPlaceholder = "",
+        isSearchActive = showSearch,
+        searchQuery = searchQuery,
+        onSearchQueryChange = onSearchQueryChange,
+        onSearchClose = onSearchClose,
+        searchPlaceholder = stringResource(R.string.menu_item_search),
         navigationIcon = {
-            IconButton(onClick = onMenuClick) {
+            IconButton(onClick = onOpenDrawer) {
                 Icon(painterResource(R.drawable.ic_menu_24dp), contentDescription = stringResource(R.string.acc_open_menu))
             }
         },
         actions = {
+            if (!showSearch) {
+                IconButton(onClick = onSearchOpen) {
+                    Icon(painterResource(R.drawable.ic_search_24dp), contentDescription = stringResource(R.string.acc_search))
+                }
+            }
             Box(modifier = Modifier.wrapContentSize(Alignment.TopEnd)) {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(painterResource(R.drawable.ic_more_vert_24dp), contentDescription = stringResource(R.string.acc_more))
@@ -69,10 +87,16 @@ fun TvMainTopBar(
                         .heightIn(max = maxMenuHeight)
                         .verticalScrollbar(moreMenuScrollState)
                 ) {
-                    // Вызываем то же меню, что и на телефоне, но только с нашими кнопками
                     TvMoreMenuContent { action ->
                         showMenu = false
-                        onMoreMenuAction(action)
+                        when (action) {
+                            MainMoreMenuAction.RestartService -> onAction(MainAction.RestartService)
+                            MainMoreMenuAction.DeleteInvalid -> onBulkDelete()
+                            MainMoreMenuAction.TestAll -> onAction(MainAction.TestAllServers)
+                            MainMoreMenuAction.TestAllRealPing -> onAction(MainAction.TestRealAllServers)
+                            MainMoreMenuAction.SortByTestResults -> onAction(MainAction.SortByTestResults)
+                            MainMoreMenuAction.UpdateSubscriptions -> onAction(MainAction.UpdateSubscriptions)
+                        }
                     }
                 }
             }
@@ -82,7 +106,6 @@ fun TvMainTopBar(
 
 @Composable
 fun TvMoreMenuContent(onSelected: (MainMoreMenuAction) -> Unit) {
-    // Фильтруем enum, оставляя только те действия, которые мы хотим видеть
     val allowedActions = listOf(
         MainMoreMenuAction.RestartService,
         MainMoreMenuAction.DeleteInvalid,
@@ -91,7 +114,6 @@ fun TvMoreMenuContent(onSelected: (MainMoreMenuAction) -> Unit) {
         MainMoreMenuAction.SortByTestResults,
         MainMoreMenuAction.UpdateSubscriptions
     )
-
     AppDropdownMenuItems(
         items = allowedActions,
         labelRes = { it.labelRes },
