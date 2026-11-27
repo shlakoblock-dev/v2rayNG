@@ -69,7 +69,7 @@ fun MainScreen(
 
             if (showMenu) {
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    // 1. Обновить подписку
+                    // 1. Обновить подписку (с ожиданием, удалением мертвых и сортировкой)
                     Text("> Обновить подписку", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable {
                         showMenu = false
                         isUpdating = true
@@ -77,13 +77,26 @@ fun MainScreen(
                             try {
                                 if (!Python.isStarted()) Python.start(AndroidPlatform(mainViewModel.getApplication()))
                                 val result = Python.getInstance().getModule("sub").callAttr("run").toString()
+                                
                                 if (result.isNotBlank()) {
                                     // Сохраняем сервера в базу v2rayNG
                                     AngConfigManager.importBatchConfig(result, "", true)
-                                    // Обновляем список
-                                    mainViewModel.onAction(MainAction.RefreshGroups)
-                                    // СРАЗУ ЗАПУСКАЕМ ПРОВЕРКУ ПИНГА
-                                    mainViewModel.onAction(MainAction.TestAllRealPing)
+                                    
+                                    // Обновляем UI и запускаем проверку пинга
+                                    withContext(Dispatchers.Main) {
+                                        mainViewModel.onAction(MainAction.RefreshGroups)
+                                        mainViewModel.onAction(MainAction.TestAllRealPing)
+                                    }
+                                    
+                                    // Ждем 20 секунд, чтобы пинг успел провериться
+                                    delay(20000)
+                                    
+                                    // Удаляем мертвые и сортируем
+                                    withContext(Dispatchers.Main) {
+                                        mainViewModel.onAction(MainAction.RemoveInvalidServers)
+                                        mainViewModel.onAction(MainAction.SortByTestResults)
+                                        mainViewModel.onAction(MainAction.RefreshGroups)
+                                    }
                                 }
                                 withContext(Dispatchers.Main) { isUpdating = false }
                             } catch (e: Exception) { 
@@ -195,7 +208,7 @@ fun MainScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "> Проверка серверов...\n> Пожалуйста, подождите.",
+                    text = "> Проверка серверов...\n> Пожалуйста, подождите.\n> Это займет около 20 секунд.",
                     color = Color.Green,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 18.sp,
