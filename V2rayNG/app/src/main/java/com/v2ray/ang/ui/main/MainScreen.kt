@@ -1,42 +1,31 @@
 package com.v2ray.ang.ui.main
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.DrawerValue
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
-import androidx.compose.material3.rememberDrawerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
 import com.v2ray.ang.dto.entities.ProfileItem
 import com.v2ray.ang.ui.compose.LocalDarkTheme
 import com.v2ray.ang.ui.compose.QRCodeDialog
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun MainScreen(
@@ -53,13 +42,15 @@ fun MainScreen(
     val confirmRemove = uiState.confirmRemove
     val shareQRCodeBitmap = uiState.shareQRCodeBitmap
 
+    // --- СОСТОЯНИЕ ДЛЯ ПИТОНА ---
+    var isUpdating by remember { mutableStateOf(false) }
+    var updateLog by remember { mutableStateOf("") }
+
     val isDarkTheme = LocalDarkTheme.current
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var showSearch by rememberSaveable { mutableStateOf(false) }
     val searchQuery = uiState.searchQuery
-    var showDelAllConfirm by remember { mutableStateOf(false) }
-    var showDelDuplicateConfirm by remember { mutableStateOf(false) }
     var showDelInvalidConfirm by remember { mutableStateOf(false) }
     var showRemoveConfirm by rememberSaveable(stateSaver = ServerDeleteTarget.Saver) {
         mutableStateOf<ServerDeleteTarget?>(null)
@@ -74,15 +65,11 @@ fun MainScreen(
         }
     }
 
-    val pagerState = rememberPagerState(
-        initialPage = 0,
-        pageCount = { groups.size.coerceAtLeast(1) }
-    )
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { groups.size.coerceAtLeast(1) })
 
     LaunchedEffect(groups, uiState.selectedGroupId) {
         if (groups.isEmpty()) return@LaunchedEffect
-        val selectedIndex = groups.indexOfFirst { it.id == uiState.selectedGroupId }
-            .takeIf { it >= 0 } ?: 0
+        val selectedIndex = groups.indexOfFirst { it.id == uiState.selectedGroupId }.takeIf { it >= 0 } ?: 0
         if (!pagerState.isScrollInProgress && pagerState.settledPage != selectedIndex) {
             pagerState.scrollToPage(selectedIndex)
         }
@@ -92,23 +79,21 @@ fun MainScreen(
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.settledPage }
-            .distinctUntilChanged()
-            .collect { page ->
-                val currentGroups = latestGroups
-                if (page in currentGroups.indices) {
-                    onAction(MainAction.SelectGroup(currentGroups[page].id))
-                }
+        snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect { page ->
+            val currentGroups = latestGroups
+            if (page in currentGroups.indices) {
+                onAction(MainAction.SelectGroup(currentGroups[page].id))
             }
+        }
     }
 
     MainDialogs(
-        showDelAllConfirm = showDelAllConfirm,
-        onDismissDelAll = { showDelAllConfirm = false },
-        onConfirmDelAll = { showDelAllConfirm = false; onAction(MainAction.RemoveAllServers) },
-        showDelDuplicateConfirm = showDelDuplicateConfirm,
-        onDismissDelDuplicate = { showDelDuplicateConfirm = false },
-        onConfirmDelDuplicate = { showDelDuplicateConfirm = false; onAction(MainAction.RemoveDuplicateServers) },
+        showDelAllConfirm = false,
+        onDismissDelAll = { },
+        onConfirmDelAll = { },
+        showDelDuplicateConfirm = false,
+        onDismissDelDuplicate = { },
+        onConfirmDelDuplicate = { },
         showDelInvalidConfirm = showDelInvalidConfirm,
         onDismissDelInvalid = { showDelInvalidConfirm = false },
         onConfirmDelInvalid = { showDelInvalidConfirm = false; onAction(MainAction.RemoveInvalidServers) },
@@ -119,14 +104,7 @@ fun MainScreen(
 
     if (shareTarget != null) {
         val (guid, profile, more) = shareTarget!!
-        ShareMethodDialog(
-            guid = guid,
-            profile = profile,
-            more = more,
-            onDismiss = { shareTarget = null },
-            onAction = onAction,
-            onRemove = removeServer,
-        )
+        ShareMethodDialog(guid, profile, more, { shareTarget = null }, onAction, removeServer)
     }
     if (shareQRCodeBitmap != null) {
         QRCodeDialog(bitmap = shareQRCodeBitmap, onDismiss = { onAction(MainAction.DismissQRCodeDialog) })
@@ -135,43 +113,64 @@ fun MainScreen(
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            MainDrawerContent(
-                drawerState = drawerState,
-                onNavigate = { route ->
-                    scope.launch { drawerState.close() }
-                    onNavigate(route)
-                }
-            )
+            MainDrawerContent(drawerState, { route ->
+                scope.launch { drawerState.close() }
+                onNavigate(route)
+            })
         }
     ) {
         Scaffold(
             contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
             topBar = {
-                // Здесь мы оставили только заголовок "Сливы VPN" (через MainTopBar, но убираем плюсик и поиск)
                 MainTopBar(
-                    isLoading = isLoading,
-                    showSearch = false, // Отключаем поиск, чтобы не было иконки
-                    searchQuery = "",
-                    onSearchQueryChange = { },
-                    onSearchClose = { },
-                    onSearchToggle = { },
+                    isLoading = isLoading, showSearch = false, searchQuery = "",
+                    onSearchQueryChange = { }, onSearchClose = { }, onSearchToggle = { },
                     onMenuClick = { scope.launch { drawerState.open() } },
                     onAction = onAction,
                     onMoreMenuAction = { action ->
-                        // Оставляем ТОЛЬКО запрошенные пункты
                         when (action) {
                             MainMoreMenuAction.RestartService -> onAction(MainAction.RestartService)
                             MainMoreMenuAction.DeleteInvalid -> showDelInvalidConfirm = true
                             MainMoreMenuAction.TestAll -> onAction(MainAction.TestAllServers)
                             MainMoreMenuAction.TestAllRealPing -> onAction(MainAction.TestRealAllServers)
                             MainMoreMenuAction.SortByTestResults -> onAction(MainAction.SortByTestResults)
-                            MainMoreMenuAction.UpdateSubscriptions -> onAction(MainAction.UpdateSubscriptions)
-                            else -> {} // Всё остальное игнорируем
+                            
+                            // --- ЗАПУСК ПИТОНА ---
+                            MainMoreMenuAction.UpdateSubscriptions -> {
+                                isUpdating = true
+                                updateLog = "Инициализация Python..."
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        if (!Python.isStarted()) {
+                                            Python.start(AndroidPlatform(mainViewModel.getApplication()))
+                                        }
+                                        val py = Python.getInstance()
+                                        val pyModule = py.getModule("sub")
+                                        
+                                        withContext(Dispatchers.Main) { updateLog = "Запуск проверки серверов..." }
+                                        
+                                        // Вызываем функцию run() из sub.py
+                                        val result = pyModule.callAttr("run").toString()
+                                        
+                                        withContext(Dispatchers.Main) {
+                                            updateLog = "Успешно! Получено ${result.lines().size} серверов."
+                                            isUpdating = false
+                                            // TODO: Сохранить result в базу v2rayNG
+                                        }
+                                    } catch (e: Exception) {
+                                        withContext(Dispatchers.Main) {
+                                            updateLog = "Ошибка: ${e.message}"
+                                            isUpdating = false
+                                        }
+                                    }
+                                }
+                            }
+                            else -> {}
                         }
                     }
                 )
             },
-            floatingActionButton = {}, // Убираем FloatingActionButton (плюсик), если он был тут
+            floatingActionButton = {},
         ) { innerPadding ->
             val layoutDirection = LocalLayoutDirection.current
             val bottomBarHeight = with(LocalDensity.current) { bottomBarHeightPx.toDp() }
@@ -187,8 +186,6 @@ fun MainScreen(
                                 end = innerPadding.calculateEndPadding(layoutDirection)
                             )
                     ) {
-                        // Убрали GroupTabBar, так как он выводит "Конфигурации"
-
                         HorizontalPager(
                             state = pagerState,
                             modifier = Modifier.fillMaxSize(),
@@ -197,45 +194,51 @@ fun MainScreen(
                             key = { page -> groups.getOrNull(page)?.id ?: "group-page-$page" }
                         ) { page ->
                             val group = groups.getOrNull(page) ?: return@HorizontalPager
-
                             GroupPagerPage(
-                                groupId = group.id,
-                                mainViewModel = mainViewModel,
-                                selectedGuid = selectedGuid,
-                                locateTarget = uiState.locateTarget,
-                                doubleColumnDisplay = doubleColumnDisplay,
+                                groupId = group.id, mainViewModel = mainViewModel, selectedGuid = selectedGuid,
+                                locateTarget = uiState.locateTarget, doubleColumnDisplay = doubleColumnDisplay,
                                 searchQuery = searchQuery,
                                 onSelectServer = { guid -> onAction(MainAction.SelectServer(guid)) },
                                 onEditServer = { guid, profile -> onAction(MainAction.EditServer(guid, profile)) },
-                                onShareServer = { guid, profile ->
-                                    shareTarget = Triple(guid, profile, false)
-                                },
-                                onMoreServer = { guid, profile ->
-                                    shareTarget = Triple(guid, profile, true)
-                                },
-                                onRemoveServer = removeServer,
-                                usageInfo = group.usageInfo,
-                                groupTitle = group.remarks,
+                                onShareServer = { guid, profile -> shareTarget = Triple(guid, profile, false) },
+                                onMoreServer = { guid, profile -> shareTarget = Triple(guid, profile, true) },
+                                onRemoveServer = removeServer, usageInfo = group.usageInfo, groupTitle = group.remarks,
                                 onOpenLink = { url -> onAction(MainAction.OpenSubscriptionLink(url)) },
-                                contentPadding = PaddingValues(
-                                    start = 0.dp,
-                                    top = 0.dp,
-                                    end = 0.dp,
-                                    bottom = bottomBarHeight + 8.dp
-                                )
+                                contentPadding = PaddingValues(0.dp, 0.dp, 0.dp, bottomBarHeight + 8.dp)
                             )
                         }
                     }
                 }
+                
                 MainBottomBar(
-                    displayText = "", // УБРАЛИ ТЕКСТ "Не подключено"
+                    displayText = "",
                     isRunning = isRunning,
                     isDarkTheme = isDarkTheme,
                     onAction = onAction,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .onSizeChanged { bottomBarHeightPx = it.height }
+                    modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { bottomBarHeightPx = it.height }
                 )
+
+                // --- ОВЕРЛЕЙ С ПРОГРЕССОМ ---
+                if (isUpdating) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.85f))
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = Color(0xFF4CAF50), strokeWidth = 6.dp)
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Text(
+                                text = updateLog,
+                                color = Color.White,
+                                fontSize = 16.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
             }
         }
     }
