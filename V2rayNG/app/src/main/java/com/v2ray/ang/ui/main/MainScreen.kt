@@ -153,8 +153,7 @@ fun MainScreen(
                                         // СОХРАНЯЕМ В БАЗУ v2rayNG
                                         if (result.isNotBlank()) {
                                             AngConfigManager.importBatchConfig(
-                                                mainViewModel.getApplication(), 
-                                                result, 
+                                                                                           result, 
                                                 "", 
                                                 true
                                             )
