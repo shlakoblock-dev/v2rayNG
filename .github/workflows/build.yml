@@ -16,7 +16,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # Скачиваем нативную библиотеку и проверяем, что она не пустая
+      # ДОБАВЛЯЕМ PYTHON 3.11 ДЛЯ CHAQUOPY
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Download libv2ray
         run: |
           mkdir -p V2rayNG/app/libs
@@ -36,5 +41,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: SlivyVPN-Debug
-          # В v2rayNG сборка fdroid кладет файлы в отдельную папку
           path: V2rayNG/app/build/outputs/apk/fdroid/debug/*.apk
