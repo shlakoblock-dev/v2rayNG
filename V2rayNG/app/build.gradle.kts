@@ -166,6 +166,15 @@ android {
         }
     }
 
+    ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+        python {
+            version = "3.11"
+            pip {
+                install("requests")
+            }
+        }
 }
 
 dependencies {
