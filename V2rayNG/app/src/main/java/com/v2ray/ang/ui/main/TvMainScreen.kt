@@ -190,22 +190,21 @@ internal fun TvMainScreen(
             Scaffold(
                 contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
                 topBar = {
-                    TvMainTopBar(
-                        isLoading = isLoading,
-                        isRunning = uiState.isRunning,
-                        showSearch = showSearch,
-                        searchQuery = uiState.searchQuery,
-                        focusRequesters = topBarFocus,
-                        onSearchQueryChange = { onAction(MainAction.Search(it)) },
-                        onSearchClose = ::closeSearch,
-                        onSearchOpen = { showSearch = true },
-                        onOpenDrawer = { openDrawer(TvMainFocusTarget.Toolbar) },
-                        onMoveDown = { selectedGroup?.let { focusGroupTab(it.id) } ?: false },
-                        onAction = onAction,
-                        // ИСПРАВЛЕНИЕ ЗДЕСЬ: передаем лямбду, которая принимает аргумент
-                        onBulkDelete = { _: TvBulkDeleteTarget -> dialogs.bulkDelete() }
-                    )
-                },
+    TvMainTopBar(
+        isLoading = isLoading,
+        isRunning = uiState.isRunning,
+        showSearch = showSearch,
+        searchQuery = uiState.searchQuery,
+        focusRequesters = topBarFocus,
+        onSearchQueryChange = { onAction(MainAction.Search(it)) },
+        onSearchClose = ::closeSearch,
+        onSearchOpen = { showSearch = true },
+        onOpenDrawer = { openDrawer(TvMainFocusTarget.Toolbar) },
+        onMoveDown = { selectedGroup?.let { focusGroupTab(it.id) } ?: false },
+        onAction = onAction
+        // onBulkDelete убран
+    )
+},
                 bottomBar = {
                     val connection = stringResource(if (uiState.isRunning) R.string.connection_connected_tv else R.string.connection_not_connected)
                     val details = when (uiState.status) {
