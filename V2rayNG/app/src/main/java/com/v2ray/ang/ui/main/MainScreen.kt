@@ -5,9 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,15 +36,14 @@ fun MainScreen(
 
     var showMenu by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
-    var updateLog by remember { mutableStateOf("") }
     
-    // Живой пинг (симуляция для визуала, так как v2rayNG не отдает его напрямую в UI)
+    // Живой пинг (визуальный эффект)
     var livePing by remember { mutableStateOf(0) }
     LaunchedEffect(isRunning) {
         if (isRunning) {
             while (true) {
-                livePing = (30..120).random() // Имитация живого пинга
-                delay(1000)
+                livePing = (40..180).random()
+                delay(1500)
             }
         }
     }
@@ -59,7 +56,7 @@ fun MainScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             
-            // --- ВЕРХНЕЕ МЕНЮ ---
+            // --- МЕНЮ ОПЦИЙ ---
             Row(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = "[ Опции ]",
@@ -72,6 +69,7 @@ fun MainScreen(
 
             if (showMenu) {
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                    // 1. Обновить подписку
                     Text("> Обновить подписку", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable {
                         showMenu = false
                         isUpdating = true
@@ -80,19 +78,41 @@ fun MainScreen(
                                 if (!Python.isStarted()) Python.start(AndroidPlatform(mainViewModel.getApplication()))
                                 val result = Python.getInstance().getModule("sub").callAttr("run").toString()
                                 if (result.isNotBlank()) {
-                                    AngConfigManager.importBatchConfig(mainViewModel.getApplication(), result, "", true)
+                                    // Сохраняем сервера в базу v2rayNG
+                                    AngConfigManager.importBatchConfig(result, "", true)
+                                    // Обновляем список
+                                    mainViewModel.onAction(MainAction.RefreshGroups)
+                                    // СРАЗУ ЗАПУСКАЕМ ПРОВЕРКУ ПИНГА
+                                    mainViewModel.onAction(MainAction.TestAllRealPing)
                                 }
-                                mainViewModel.onAction(MainAction.RefreshGroups)
                                 withContext(Dispatchers.Main) { isUpdating = false }
-                            } catch (e: Exception) { withContext(Dispatchers.Main) { isUpdating = false } }
+                            } catch (e: Exception) { 
+                                withContext(Dispatchers.Main) { isUpdating = false } 
+                            }
                         }
                     }.padding(4.dp))
-                    Text("> Перепроверить пинг", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { onAction(MainAction.TestRealAllServers); showMenu = false }.padding(4.dp))
-                    Text("> Удалить мертвые", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { onAction(MainAction.RemoveInvalidServers); showMenu = false }.padding(4.dp))
+
+                    // 2. Перепроверить пинг
+                    Text("> Перепроверить пинг", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { 
+                        onAction(MainAction.TestAllRealPing)
+                        showMenu = false 
+                    }.padding(4.dp))
+
+                    // 3. Удалить мертвые
+                    Text("> Удалить мертвые", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { 
+                        onAction(MainAction.RemoveInvalidServers)
+                        showMenu = false 
+                    }.padding(4.dp))
+
+                    // 4. Сортировка
+                    Text("> Сортировка по пингу", color = Color.White, fontFamily = FontFamily.Monospace, modifier = Modifier.clickable { 
+                        onAction(MainAction.SortByTestResults)
+                        showMenu = false 
+                    }.padding(4.dp))
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
             // --- ЗАГОЛОВОК ---
             Text(
@@ -104,7 +124,7 @@ fun MainScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
 
             // --- КНОПКА ПОДКЛЮЧЕНИЯ ---
             Text(
@@ -119,6 +139,7 @@ fun MainScreen(
                 textAlign = TextAlign.Center
             )
 
+            // --- ЖИВОЙ ПИНГ ---
             if (isRunning) {
                 Text(
                     text = "> Пинг: $livePing ms",
@@ -130,14 +151,13 @@ fun MainScreen(
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
             // --- СПИСОК СЕРВЕРОВ ---
             Text("Сервера:", color = Color.Gray, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(8.dp))
             
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Берем серверы из базы v2rayNG
                 val allServers = groups.flatMap { it.profiles ?: emptyList() }
                 
                 items(allServers) { server ->
@@ -148,17 +168,16 @@ fun MainScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = "- ${server.remarks}",
+                            text = "- ${server.remarks ?: "Unknown"}",
                             color = if (uiState.selectedGuid == server.guid) Color.Green else Color.White,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 16.sp
                         )
                         Text(
-                            text = "${server.delay} ms", // Берем пинг из базы
+                            text = if (server.delay > 0) "${server.delay} ms" else "-1 ms",
                             color = when {
-                                server.delay < 0 -> Color.Red
-                                server.delay < 150 -> Color.Green
-                                server.delay < 300 -> Color.Yellow
+                                server.delay in 1..150 -> Color.Green
+                                server.delay in 151..300 -> Color.Yellow
                                 else -> Color.Red
                             },
                             fontFamily = FontFamily.Monospace,
@@ -169,7 +188,7 @@ fun MainScreen(
             }
         }
 
-        // ОВЕРЛЕЙ ЗАГРУЗКИ (Терминальный стиль)
+        // --- ОВЕРЛЕЙ ЗАГРУЗКИ ---
         if (isUpdating) {
             Box(
                 modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.9f)),
