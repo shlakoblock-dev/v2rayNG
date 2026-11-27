@@ -46,7 +46,7 @@ fun TvMainTopBar(
     onOpenDrawer: () -> Unit,
     onMoveDown: () -> Boolean,
     onAction: (MainAction) -> Unit,
-    onBulkDelete: (TvBulkDeleteTarget) -> Unit,
+    // onBulkDelete убран
 ) {
     var showMenu by remember { mutableStateOf(false) }
     val moreMenuScrollState = rememberScrollState()
@@ -91,7 +91,7 @@ fun TvMainTopBar(
                         showMenu = false
                         when (action) {
                             MainMoreMenuAction.RestartService -> onAction(MainAction.RestartService)
-                            MainMoreMenuAction.DeleteInvalid -> onBulkDelete()
+                            MainMoreMenuAction.DeleteInvalid -> onAction(MainAction.RemoveInvalidServers)
                             MainMoreMenuAction.TestAll -> onAction(MainAction.TestAllServers)
                             MainMoreMenuAction.TestAllRealPing -> onAction(MainAction.TestRealAllServers)
                             MainMoreMenuAction.SortByTestResults -> onAction(MainAction.SortByTestResults)
