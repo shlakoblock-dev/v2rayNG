@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Slivy VPN Terminal</title>
+    <style>
+        /* Подключаем пиксельный шрифт */
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+        :root {
+            --bg: #000000;
+            --text: #ffffff;
+            --green: #00ff00;
+            --red: #ff0000;
+            --gray: #888888;
+            --dim: #444444;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            /* ЖЕСТКАЯ ПИКСЕЛИЗАЦИЯ */
+            -webkit-font-smoothing: none;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeSpeed;
+            image-rendering: pixelated;
+            font-family: 'VT323', monospace;
+        }
+
+        body {
+            margin: 0;
+            padding: 16px;
+            background-color: var(--bg);
+            color: var(--text);
+            font-size: 24px; /* Крупный шрифт как в старых терминалах */
+            line-height: 1.2;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            /* Пиксельная обводка текста (серый пиксель на краях) */
+            text-shadow: 1px 1px 0px var(--dim), -1px -1px 0px var(--dim);
+        }
+
+        /* Мигающий курсор */
+        .cursor {
+            display: inline-block;
+            width: 12px;
+            height: 22px;
+            background-color: var(--green);
+            animation: blink 1s step-end infinite;
+            vertical-align: bottom;
+            margin-left: 4px;
+        }
+
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        /* Стили для интерактивного текста (вместо кнопок) */
+        .cmd {
+            color: var(--green);
+            cursor: pointer;
+            display: block;
+            margin: 4px 0;
+            text-shadow: 1px 1px 0px var(--gray);
+        }
+
+        .cmd:active, .cmd:hover {
+            background-color: var(--green);
+            color: var(--bg);
+            text-shadow: none;
+        }
+
+        .cmd.disabled {
+            color: var(--gray);
+            pointer-events: none;
+            text-shadow: none;
+        }
+
+        /* Основной вывод */
+        #console {
+            flex-grow: 1;
+            white-space: pre-wrap;
+            margin-bottom: 16px;
+            color: var(--text);
+        }
+
+        /* Список серверов */
+        #server-list {
+            margin-top: 16px;
+        }
+
+        .server-row {
+            color: var(--text);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            padding: 2px 0;
+        }
+
+        .server-row:active, .server-row.selected {
+            background-color: var(--green);
+            color: var(--bg);
+            text-shadow: none;
+        }
+
+        .ping-good { color: var(--green); }
+        .ping-bad { color: var(--red); }
+
+        /* Скрываем меню по умолчанию */
+        #menu-options {
+            display: none;
+            margin: 8px 0 8px 24px;
+        }
+        
+    </style>
+</head>
+<body>
+
+    <!-- Лог-консоль, где печатается текст -->
+    <div id="console">root@slivy:~# ./vpn_start<br>> Инициализация...<br>> Выберите сервер из списка ниже.</div>
+
+    <!-- Главная команда подключения (вместо кнопки) -->
+    <div id="main-cmd" class="cmd" onclick="toggleConnect()">root@slivy:~# ./connect<span class="cursor"></span></div>
+
+    <!-- Меню команд -->
+    <div class="cmd" onclick="toggleMenu()">root@slivy:~# ./menu</div>
+    <div id="menu-options">
+        <div class="cmd" onclick="updateSub()">> ./update_sub</div>
+        <div class="cmd" onclick="testPing()">> ./check_ping</div>
+        <div class="cmd" onclick="removeDead()">> ./remove_dead</div>
+    </div>
+
+    <!-- Список серверов -->
+    <div id="server-list">
+        <!-- Заполняется скриптом -->
+    </div>
+
+    <script>
+        let isConnected = false;
+        let servers = [
+            { id: 1, name: "[🇳🇱 NL] Amsterdam", ping: 120 },
+            { id: 2, name: "[🇩🇪 DE] Frankfurt", ping: 145 },
+            { id: 3, name: "[🇺🇸 US] New_York", ping: 210 },
+            { id: 4, name: "[🇷🇺 RU] Moscow", ping: 45 }
+        ];
+        let selectedServerId = 4;
+
+        const consoleDiv = document.getElementById('console');
+        const mainCmd = document.getElementById('main-cmd');
+
+        // --- ЭФФЕКТ ПЕЧАТНОЙ МАШИНКИ ---
+        async function printToConsole(text) {
+            consoleDiv.innerHTML = ""; // Очищаем консоль
+            let i = 0;
+            return new Promise(resolve => {
+                function type() {
+                    if (i < text.length) {
+                        if (text.charAt(i) === '\n') {
+                            consoleDiv.innerHTML += '<br>';
+                        } else {
+                            consoleDiv.innerHTML += text.charAt(i);
+                        }
+                        i++;
+                        setTimeout(type, 10); // Скорость печати (10мс на символ)
+                    } else {
+                        resolve();
+                    }
+                }
+                type();
+            });
+        }
+
+        // --- ЛОГИКА КОМАНД ---
+        async function toggleConnect() {
+            if (isConnected) {
+                // Отключение
+                isConnected = false;
+                mainCmd.innerHTML = "root@slivy:~# ./connect<span class='cursor'></span>";
+                mainCmd.style.color = "var(--green)";
+                
+                // Вызов Android
+                if (window.Android) window.Android.disconnect();
+                await printToConsole("> Завершение соединения...\n> VPN отключен.");
+                
+            } else {
+                // Подключение
+                const server = servers.find(s => s.id === selectedServerId);
+                await printToConsole(`> Установка соединения с ${server.name}...`);
+                
+                isConnected = true;
+                mainCmd.innerHTML = "root@slivy:~# ./disconnect<span class='cursor'></span>";
+                mainCmd.style.color = "var(--red)";
+                
+                // Вызов Android
+                if (window.Android) window.Android.connect();
+                await printToConsole(`> Соединение установлено.\n> LIVE PING: ${Math.floor(Math.random() * 80 + 20)} ms`);
+            }
+        }
+
+        function toggleMenu() {
+            const menu = document.getElementById('menu-options');
+            menu.style.display = menu.style.display === 'block' ? 'none' : 'block';
+        }
+
+        function updateSub() {
+            toggleMenu();
+            printToConsole("> Загрузка конфигов [████████░░] 80%\n> Скачивание...");
+            setTimeout(() => {
+                printToConsole("> [ OK ] База обновлена. Найдено 147 серверов.");
+                // Добавляем фейковые для визуала
+                servers.push({ id: 5, name: "[🇸🇬 SG] Singapore", ping: 180 });
+                renderServers();
+            }, 1500);
+        }
+
+        function testPing() {
+            toggleMenu();
+            printToConsole("> Проверка пинга...");
+            setTimeout(() => {
+                servers.forEach(s => s.ping = Math.floor(Math.random() * 300));
+                renderServers();
+                printToConsole("> Проверка завершена.");
+            }, 800);
+        }
+
+        function removeDead() {
+            toggleMenu();
+            servers = servers.filter(s => s.ping >= 0);
+            renderServers();
+            printToConsole("> Мертвые сервера удалены.");
+        }
+
+        // --- СПИСОК СЕРВЕРОВ ---
+        function renderServers() {
+            const list = document.getElementById('server-list');
+            list.innerHTML = '';
+            
+            servers.forEach(s => {
+                const div = document.createElement('div');
+                div.className = `server-row ${s.id === selectedServerId ? 'selected' : ''}`;
+                
+                let pingClass = s.ping < 150 ? 'ping-good' : 'ping-bad';
+                let pingStr = s.ping >= 0 ? `${s.ping}ms` : 'DEAD';
+
+                div.innerHTML = `
+                    <span>${s.name}</span>
+                    <span class="${pingClass}">${pingStr}</span>
+                `;
+                
+                div.onclick = () => {
+                    if (isConnected) return; // Не даем менять на лету
+                    selectedServerId = s.id;
+                    renderServers();
+                    printToConsole(`> Выбран сервер: ${s.name}`);
+                };
+                
+                list.appendChild(div);
+            });
+        }
+
+        // Инициализация
+        renderServers();
+    </script>
+</body>
+</html>
